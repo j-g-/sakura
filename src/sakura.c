@@ -236,6 +236,7 @@ static struct {
 	bool visible_bell;
 	bool blinking_cursor;
 	bool fullscreen;
+	bool toggle_background_color;
 	bool keep_fc;				/* Global flag to indicate that we don't want changes in the files and columns values */
 	bool config_modified;		/* Configuration has been modified */
 	bool externally_modified;	/* Configuration file has been modified by another proccess */
@@ -269,6 +270,7 @@ static struct {
 	gint scrollbar_key;
 	gint set_tab_name_key;
 	gint fullscreen_key;
+	gint toggle_background_color_key;
 	gint set_colorset_keys[NUM_COLORSETS];
 	GRegex *http_regexp;
 	char *argv[3];
@@ -320,6 +322,7 @@ struct terminal {
 #define DEFAULT_SCROLLBAR_KEY  GDK_KEY_S
 #define DEFAULT_SET_TAB_NAME_KEY  GDK_KEY_N
 #define DEFAULT_FULLSCREEN_KEY  GDK_KEY_F11
+#define DEFAULT_TOGGLE_BACKGROUND_COLOR_KEY  GDK_KEY_F12
 /* make this an array instead of #defines to get a compile time
  * error instead of a runtime if NUM_COLORSETS changes */
 static int cs_keys[NUM_COLORSETS] = 
@@ -386,6 +389,7 @@ static void     sakura_show_resize_grip(GtkWidget *, void *);
 static void     sakura_closebutton_clicked(GtkWidget *, void *);
 static void     sakura_conf_changed(GtkWidget *, void *);
 static void     sakura_window_show_event(GtkWidget *, gpointer);
+static void     sakura_toggle_background_color(GtkWidget *, gpointer);
 
 /* Misc */
 static void     sakura_error(const char *, ...);
@@ -422,6 +426,7 @@ static gboolean option_hold=FALSE;
 static const char *option_geometry;
 static char *option_config_file;
 static gboolean option_fullscreen;
+static gboolean option_toggle_background_color;
 static gboolean option_maximize;
 
 static GOptionEntry entries[] = {
@@ -439,6 +444,7 @@ static GOptionEntry entries[] = {
 	{ "hold", 'h', 0, G_OPTION_ARG_NONE, &option_hold, N_("Hold window after execute command"), NULL },
 	{ "maximize", 'm', 0, G_OPTION_ARG_NONE, &option_maximize, N_("Maximize window"), NULL },
 	{ "fullscreen", 's', 0, G_OPTION_ARG_NONE, &option_fullscreen, N_("Fullscreen mode"), NULL },
+	{ "toggle-background-color", 's', 0, G_OPTION_ARG_NONE, &option_toggle_background_color, N_("Toggle background color"), NULL },
 	{ "geometry", 0, 0, G_OPTION_ARG_STRING, &option_geometry, N_("X geometry specification"), NULL },
 	{ "config-file", 0, 0, G_OPTION_ARG_FILENAME, &option_config_file, N_("Use alternate configuration file"), NULL },
 	{ NULL }
@@ -562,6 +568,11 @@ gboolean sakura_key_press (GtkWidget *widget, GdkEventKey *event, gpointer user_
 	/* F11 (fullscreen) pressed */
 	if (event->keyval==sakura.fullscreen_key){
 		sakura_fullscreen(NULL, NULL);
+		return TRUE;
+	}
+	/* F12 (toggle_background_color) pressed */
+	if (event->keyval==sakura.toggle_background_color_key){
+		sakura_toggle_background_color(NULL, NULL);
 		return TRUE;
 	}
 
@@ -897,6 +908,44 @@ sakura_window_show_event(GtkWidget *widget, gpointer data)
 {
 	// set size when the window is first shown
 	sakura_set_size();
+}
+
+static void
+sakura_toggle_background_color(GtkWidget *widget, gpointer data)
+{
+	int i;
+	int n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(sakura.notebook));
+	struct terminal *term;
+	GdkRGBA white={255, 255, 255, 1};
+
+	/* Re-apply in each notebook tab its terminals colors */
+	for (i = (n_pages - 1); i >= 0; i--) {
+		term = sakura_get_page_term(sakura, i);
+		if (sakura.has_rgba) {
+			/* FIXME: Is this still needed with RGBA colors?? */
+			/* This is needed for set_opacity to have effect. The opacity does
+			   take effect when switching tabs, so this setting to white is 
+			   actually needed only in the shown tab.*/
+			vte_terminal_set_color_background_rgba(VTE_TERMINAL (term->vte), &white);
+			vte_terminal_set_opacity(VTE_TERMINAL (term->vte), (int)((sakura.backcolors[term->colorset].alpha)*65535));
+		}
+        sakura.toggle_background_color = !sakura.toggle_background_color;
+        if (sakura.toggle_background_color){
+            vte_terminal_set_colors_rgba(VTE_TERMINAL(term->vte), 
+                    &sakura.backcolors[term->colorset],
+                    &sakura.forecolors[term->colorset], 
+                    sakura.palette, PALETTE_SIZE);
+        } else {
+            vte_terminal_set_colors_rgba(VTE_TERMINAL(term->vte), 
+                    &sakura.forecolors[term->colorset], 
+                    &sakura.backcolors[term->colorset],
+                    sakura.palette, PALETTE_SIZE);
+        
+        }
+
+
+		vte_terminal_set_color_cursor_rgba(VTE_TERMINAL(term->vte), &sakura.curscolors[term->colorset]);
+	}
 }
 
 
@@ -2064,6 +2113,11 @@ sakura_init()
 	}
 	sakura.fullscreen_key = sakura_get_config_key("fullscreen_key");
 
+	if (!g_key_file_has_key(sakura.cfg, cfg_group, "toggle_background_color_key", NULL)) {
+		sakura_set_config_key("toggle_background_color_key", DEFAULT_TOGGLE_BACKGROUND_COLOR_KEY);
+	}
+	sakura.toggle_background_color_key = sakura_get_config_key("toggle_background_color_key");
+
 	if (!g_key_file_has_key(sakura.cfg, cfg_group, "set_colorset_accelerator", NULL)) {
 		sakura_set_config_integer("set_colorset_accelerator", DEFAULT_SELECT_COLORSET_ACCELERATOR);
 	}
@@ -2176,7 +2230,8 @@ sakura_init_popup()
 	          *item_palette, *item_palette_tango, *item_palette_linux, *item_palette_xterm,
 			  *item_palette_solarized_dark, *item_palette_solarized_light,
 	          *item_show_close_button, *item_tabs_on_bottom, *item_less_questions,
-			  *item_toggle_resize_grip;
+			  *item_toggle_resize_grip,
+			  *item_toggle_background_color;
 	//GtkAction *action_open_link, *action_copy_link, *action_new_tab, *action_set_name, *action_close_tab,
 	//          *action_copy, *action_paste, *action_select_font, *action_select_colors,
 	//          *action_select_background, *action_clear_background, *action_set_title,
@@ -2192,6 +2247,7 @@ sakura_init_popup()
 	action_set_name=gtk_action_new("set_name", _("Set tab name..."), NULL, NULL);
 	action_close_tab=gtk_action_new("close_tab", _("Close tab"), NULL, NULL);
 	action_fullscreen=gtk_action_new("fullscreen", _("Full screen"), NULL, NULL);
+	action_toggle_background_color=gtk_action_new("action_toggle_background_color", _("Invert background bolor"), NULL, NULL);
 	action_copy=gtk_action_new("copy", _("Copy"), NULL, NULL);
 	action_paste=gtk_action_new("paste", _("Paste"), NULL, NULL);
 	action_select_font=gtk_action_new("select_font", _("Select font..."), NULL, NULL);
@@ -2207,6 +2263,7 @@ sakura_init_popup()
 	item_set_name=gtk_action_create_menu_item(action_set_name);
 	item_close_tab=gtk_action_create_menu_item(action_close_tab);
 	item_fullscreen=gtk_action_create_menu_item(action_fullscreen);
+	item_toggle_background_color=gtk_action_create_menu_item(action_toggle_background);
 	item_copy=gtk_action_create_menu_item(action_copy);
 	item_paste=gtk_action_create_menu_item(action_paste);
 	item_select_font=gtk_action_create_menu_item(action_select_font);
@@ -2223,6 +2280,7 @@ sakura_init_popup()
 	item_set_name=gtk_menu_item_new_with_label(_("Set tab name..."));
 	item_close_tab=gtk_menu_item_new_with_label(_("Close tab"));
 	item_fullscreen=gtk_menu_item_new_with_label(("Full screen"));
+	item_toggle_background_color=gtk_menu_item_new_with_label(("Toggle background color"));
 	item_copy=gtk_menu_item_new_with_label(_("Copy"));
 	item_paste=gtk_menu_item_new_with_label(_("Paste"));
 	item_select_font=gtk_menu_item_new_with_label(_("Select font..."));
@@ -2344,6 +2402,7 @@ sakura_init_popup()
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), item_close_tab);
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), gtk_separator_menu_item_new());
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), item_fullscreen);
+	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), item_toggle_background_color);
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), gtk_separator_menu_item_new());
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), item_copy);
 	gtk_menu_shell_append(GTK_MENU_SHELL(sakura.menu), item_paste);
@@ -2421,6 +2480,7 @@ sakura_init_popup()
 	g_signal_connect(G_OBJECT(sakura.item_copy_link), "activate", G_CALLBACK(sakura_copy_url), NULL);
 	g_signal_connect(G_OBJECT(sakura.item_clear_background), "activate", G_CALLBACK(sakura_clear), NULL);
 	g_signal_connect(G_OBJECT(item_fullscreen), "activate", G_CALLBACK(sakura_fullscreen), NULL);
+	g_signal_connect(G_OBJECT(item_toggle_background_color), "activate", G_CALLBACK(sakura_toggle_background_color), NULL);
 
 
 	gtk_widget_show_all(sakura.menu);
