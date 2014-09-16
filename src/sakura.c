@@ -386,6 +386,7 @@ static void     sakura_show_resize_grip(GtkWidget *, void *);
 static void     sakura_closebutton_clicked(GtkWidget *, void *);
 static void     sakura_conf_changed(GtkWidget *, void *);
 static void     sakura_window_show_event(GtkWidget *, gpointer);
+static void     sakura_invert_colors(GtkWidget *, gpointer);
 
 /* Misc */
 static void     sakura_error(const char *, ...);
@@ -897,6 +898,33 @@ sakura_window_show_event(GtkWidget *widget, gpointer data)
 {
 	// set size when the window is first shown
 	sakura_set_size();
+}
+
+static void
+sakura_invert_colors(GtkWidget *widget, gpointer data)
+{
+	int i;
+	int n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(sakura.notebook));
+	struct terminal *term;
+	GdkRGBA white={255, 255, 255, 1};
+
+	/* Re-apply in each notebook tab its terminals colors */
+	for (i = (n_pages - 1); i >= 0; i--) {
+		term = sakura_get_page_term(sakura, i);
+		if (sakura.has_rgba) {
+			/* FIXME: Is this still needed with RGBA colors?? */
+			/* This is needed for set_opacity to have effect. The opacity does
+			   take effect when switching tabs, so this setting to white is 
+			   actually needed only in the shown tab.*/
+			vte_terminal_set_color_background_rgba(VTE_TERMINAL (term->vte), &white);
+			vte_terminal_set_opacity(VTE_TERMINAL (term->vte), (int)((sakura.backcolors[term->colorset].alpha)*65535));
+		}
+		vte_terminal_set_colors_rgba(VTE_TERMINAL(term->vte), 
+		                        &sakura.backcolors[term->colorset],
+		                        &sakura.forecolors[term->colorset], 
+		                        sakura.palette, PALETTE_SIZE);
+		vte_terminal_set_color_cursor_rgba(VTE_TERMINAL(term->vte), &sakura.curscolors[term->colorset]);
+	}
 }
 
 
@@ -2176,7 +2204,8 @@ sakura_init_popup()
 	          *item_palette, *item_palette_tango, *item_palette_linux, *item_palette_xterm,
 			  *item_palette_solarized_dark, *item_palette_solarized_light,
 	          *item_show_close_button, *item_tabs_on_bottom, *item_less_questions,
-			  *item_toggle_resize_grip;
+			  *item_toggle_resize_grip,
+			  *item_toggle_background_color;
 	//GtkAction *action_open_link, *action_copy_link, *action_new_tab, *action_set_name, *action_close_tab,
 	//          *action_copy, *action_paste, *action_select_font, *action_select_colors,
 	//          *action_select_background, *action_clear_background, *action_set_title,
@@ -2207,6 +2236,7 @@ sakura_init_popup()
 	item_set_name=gtk_action_create_menu_item(action_set_name);
 	item_close_tab=gtk_action_create_menu_item(action_close_tab);
 	item_fullscreen=gtk_action_create_menu_item(action_fullscreen);
+	item_toggle_background_color=gtk_action_create_menu_item(action_fullscreen);
 	item_copy=gtk_action_create_menu_item(action_copy);
 	item_paste=gtk_action_create_menu_item(action_paste);
 	item_select_font=gtk_action_create_menu_item(action_select_font);
