@@ -917,6 +917,7 @@ sakura_toggle_background_color(GtkWidget *widget, gpointer data)
 	int n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(sakura.notebook));
 	struct terminal *term;
 	GdkRGBA white={255, 255, 255, 1};
+    sakura.toggle_background_color = !sakura.toggle_background_color;
 
 	/* Re-apply in each notebook tab its terminals colors */
 	for (i = (n_pages - 1); i >= 0; i--) {
@@ -929,7 +930,6 @@ sakura_toggle_background_color(GtkWidget *widget, gpointer data)
 			vte_terminal_set_color_background_rgba(VTE_TERMINAL (term->vte), &white);
 			vte_terminal_set_opacity(VTE_TERMINAL (term->vte), (int)((sakura.backcolors[term->colorset].alpha)*65535));
 		}
-        sakura.toggle_background_color = !sakura.toggle_background_color;
         if (sakura.toggle_background_color){
             vte_terminal_set_colors_rgba(VTE_TERMINAL(term->vte), 
                     &sakura.backcolors[term->colorset],
@@ -942,7 +942,6 @@ sakura_toggle_background_color(GtkWidget *widget, gpointer data)
                     sakura.palette, PALETTE_SIZE);
         
         }
-
 
 		vte_terminal_set_color_cursor_rgba(VTE_TERMINAL(term->vte), &sakura.curscolors[term->colorset]);
 	}
